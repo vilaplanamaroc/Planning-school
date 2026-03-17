@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Collège Planner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-950 text-white">
+  <div class="flex h-screen">
+    <!-- Sidebar -->
+    <div class="w-72 bg-gray-900 p-6 border-r overflow-auto">
+      <h1 class="text-2xl font-bold mb-6">📚 Collège Planner</h1>
+      <input id="newSubject" class="w-full bg-gray-800 p-3 rounded-lg mb-2" placeholder="Nouvelle matière">
+      <button onclick="addSubject()" class="w-full bg-blue-600 py-3 rounded-lg mb-8">+ Ajouter</button>
+      <div id="subjectsList" class="space-y-2"></div>
+      <button onclick="resetAll()" class="mt-auto w-full text-red-400 py-2 text-sm">🗑 Tout réinitialiser</button>
+    </div>
+
+    <!-- Main -->
+    <div class="flex-1 flex flex-col">
+      <div class="flex border-b">
+        <button onclick="switchTab(0)" id="tab0" class="tab-btn active px-8 py-4">📅 Emploi du Temps</button>
+        <button onclick="switchTab(1)" id="tab1" class="tab-btn px-8 py-4">📚 Matière</button>
+        <button onclick="switchTab(2)" id="tab2" class="tab-btn px-8 py-4">📊 Progression</button>
+      </div>
+
+      <!-- Emploi du Temps -->
+      <div id="content0" class="flex-1 p-8 overflow-auto">
+        <div class="flex items-center justify-between mb-4">
+          <button onclick="prevMonth()" class="text-3xl text-gray-400 hover:text-white px-4">←</button>
+          <h2 class="text-xl">Calendrier <span id="monthTitle" class="text-blue-400"></span></h2>
+          <button onclick="nextMonth()" class="text-3xl text-gray-400 hover:text-white px-4">→</button>
+        </div>
+        <div id="calendar" class="grid grid-cols-7 gap-2"></div>
+        <div id="dayDetails" class="mt-8 bg-gray-900 p-6 rounded-2xl hidden"></div>
+      </div>
+
+      <!-- Matière -->
+      <div id="content1" class="flex-1 p-8 overflow-auto hidden">
+        <div class="flex justify-between mb-6">
+          <h2 id="selectedSubjectName" class="text-3xl font-bold"></h2>
+          <div class="flex gap-4 items-center">
+            <div class="w-64 bg-gray-800 h-3 rounded-full"><div id="subjectProgressBar" class="bg-green-500 h-3 rounded-full" style="width:0%"></div></div>
+            <span id="subjectProgressText" class="font-mono">0%</span>
+          </div>
+        </div>
+
+        <!-- Ajouter cours -->
+        <div class="bg-gray-900 p-6 rounded-2xl mb-8">
+          <div class="flex gap-3">
+            <input id="newCourseName" class="flex-1 bg-gray-800 p-3 rounded-lg" placeholder="Nom du cours (ex: Révision Chapitre 5)">
+            <input id="newCourseDate" type="date" class="bg-gray-800 p-3 rounded-lg">
+            <button onclick="setToday()" class="bg-gray-700 px-6 rounded-lg">Aujourd'hui</button>
+            <button onclick="addCourse()" class="bg-green-600 px-8 rounded-lg">Ajouter</button>
+          </div>
+        </div>
+
+        <!-- Emploi fixe -->
+        <div class="bg-gray-900 p-6 rounded-2xl mb-8">
+          <h3 class="mb-4">Emploi du temps fixe (clique sur les jours)</h3>
+          <div id="weeklySchedule" class="grid grid-cols-7 gap-2 text-center"></div>
+        </div>
+
+        <!-- Liste cours -->
+        <div id="coursesList" class="space-y-6"></div>
+      </div>
+
+      <!-- Progression -->
+      <div id="content2" class="flex-1 p-8 overflow-auto hidden">
+        <h2 class="text-2xl mb-6">Progression Globale</h2>
+        <div id="globalProgress" class="space-y-6"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let subjects = [];
+let selectedSubjectId = null;
+let selectedDay = null;
+let currentMonth = new Date().getMonth();
+let currentYear = new Date().getFullYear();
+const weekDays = ["Dimanche","Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"];
+const palette = ['#22c55e','#eab308','#a855f7','#ef4444','#06b67f','#f97316','#8b5cf6'];
+
+function loadData() {
+  const saved = localStorage.getItem('subjects');
+  subjects = saved ? JSON.parse(saved).map((s,i) => ({...s, schedule: s.schedule || [], courses: s.courses || [], color: s.color || palette[i % palette.length]})) : [];
+}
+function saveData() { localStorage.setItem('subjects', JSON.stringify(subjects)); }
+function resetAll() { if(confirm('Tout supprimer ?')) { localStorage.clear(); location.reload(); } }
+
+function prevMonth() {
+  currentMonth--;
+  if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+  renderCalendar();
+}
+function nextMonth() {
+  currentMonth++;
+  if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+  renderCalendar();
+}
+
+function renderSubjects() {
+  const html = subjects.map(s => `
+    <div onclick="selectSubject(${s.id})" class="p-4 bg-gray-800 hover:bg-gray-700 rounded-2xl flex justify-between items-center cursor-pointer ${selectedSubjectId===s.id ? 'ring-2 ring-blue-500' : ''}">
+      <div class="flex items-center gap-3"><div class="w-5 h-5 rounded" style="background:${s.color}"></div><span>${s.name}</span></div>
+      <div class="flex gap-2">
+        <button onclick="event.stopPropagation(); editSubject(${s.id});" class="text-blue-400">✏️</button>
+        <button onclick="event.stopPropagation(); deleteSubject(${s.id});" class="text-red-400">🗑</button>
+      </div>
+    </div>`).join('');
+  document.getElementById('subjectsList').innerHTML = html;
+}
+
+function addSubject() {
+  const name = document.getElementById('newSubject').value.trim();
+  if (!name) return;
+  const color = palette[subjects.length % palette.length];
+  subjects.push({id: Date.now(), name, courses: [], schedule: [], color});
+  document.getElementById('newSubject').value = '';
+  saveData();
+  renderSubjects();
+}
+
+function editSubject(id) {
+  const subj = subjects.find(s => s.id === id);
+  const newName = prompt("Nouveau nom :", subj.name);
+  if (newName && newName.trim()) {
+    subj.name = newName.trim();
+    saveData();
+    renderSubjects();
+    if (selectedSubjectId === id) renderSelectedSubject();
+  }
+}
+
+function deleteSubject(id) {
+  if (!confirm("Supprimer cette matière ?")) return;
+  subjects = subjects.filter(s => s.id !== id);
+  if (selectedSubjectId === id) selectedSubjectId = null;
+  saveData();
+  renderSubjects();
+  switchTab(0);
+}
+
+function selectSubject(id) {
+  selectedSubjectId = id;
+  renderSubjects();
+  switchTab(1);
+}
+
+function setToday() {
+  document.getElementById('newCourseDate').value = new Date().toISOString().split('T')[0];
+}
+
+function renderSelectedSubject() {
+  const subj = subjects.find(s => s.id === selectedSubjectId);
+  if (!subj) return;
+  document.getElementById('selectedSubjectName').textContent = subj.name;
+  document.getElementById('newCourseName').value = '';
+  document.getElementById('newCourseDate').value = '';
+  renderWeeklySchedule();
+  renderCourses();
+  updateSubjectProgress();
+}
+
+function renderWeeklySchedule() {
+  const subj = subjects.find(s => s.id === selectedSubjectId);
+  const html = weekDays.map((day, i) => `
+    <div onclick="toggleDay(${i})" class="p-3 rounded-xl cursor-pointer ${subj.schedule.includes(day) ? 'bg-blue-600' : 'bg-gray-800 hover:bg-gray-700'}">
+      ${day.slice(0,3)}
+    </div>`).join('');
+  document.getElementById('weeklySchedule').innerHTML = html;
+}
+
+function toggleDay(i) {
+  const subj = subjects.find(s => s.id === selectedSubjectId);
+  const day = weekDays[i];
+  if (subj.schedule.includes(day)) subj.schedule = subj.schedule.filter(d => d !== day);
+  else subj.schedule.push(day);
+  saveData();
+  renderWeeklySchedule();
+  renderCalendar();
+}
+
+function addCourse() {
+  const subj = subjects.find(s => s.id === selectedSubjectId);
+  const name = document.getElementById('newCourseName').value.trim();
+  const date = document.getElementById('newCourseDate').value;
+  if (!name || !date) return;
+  subj.courses.push({id: Date.now(), name, date, comp: false, rev: false, ass: false});
+  saveData();
+  renderCourses();
+  updateSubjectProgress();
+  renderCalendar();
+}
+
+function renderCourses() {
+  const subj = subjects.find(s => s.id === selectedSubjectId);
+  if (!subj) return;
+  const html = subj.courses.map(c => `
+    <div class="bg-gray-900 p-6 rounded-2xl">
+      <div class="flex justify-between mb-4">
+        <div><div class="font-medium">${c.name}</div><div class="text-gray-400 text-sm">${new Date(c.date).toLocaleDateString('fr-FR')}</div></div>
+        <button onclick="deleteCourse(${subj.id}, ${c.id}); event.stopPropagation()" class="text-red-400">🗑</button>
+      </div>
+      <table class="w-full">
+        <tr><td class="py-3">Compréhension</td><td class="text-right"><input type="checkbox" ${c.comp?'checked':''} onchange="toggleCheck(${subj.id},${c.id},'comp')"></td></tr>
+        <tr><td class="py-3">Révision</td><td class="text-right"><input type="checkbox" ${c.rev?'checked':''} onchange="toggleCheck(${subj.id},${c.id},'rev')"></td></tr>
+        <tr><td class="py-3">Assimilation</td><td class="text-right"><input type="checkbox" ${c.ass?'checked':''} onchange="toggleCheck(${subj.id},${c.id},'ass')"></td></tr>
+      </table>
+    </div>`).join('');
+  document.getElementById('coursesList').innerHTML = html;
+}
+
+function toggleCheck(subjId, courseId, field) {
+  const subj = subjects.find(s => s.id === subjId);
+  const course = subj.courses.find(c => c.id === courseId);
+  course[field] = !course[field];
+  saveData();
+  renderCourses();
+  updateSubjectProgress();
+  renderGlobalProgress();
+  if (selectedDay) showDay(selectedDay);
+}
+
+function deleteCourse(subjId, courseId) {
+  const subj = subjects.find(s => s.id === subjId);
+  subj.courses = subj.courses.filter(c => c.id !== courseId);
+  saveData();
+  renderCourses();
+  updateSubjectProgress();
+  renderCalendar();
+}
+
+function updateSubjectProgress() {
+  const subj = subjects.find(s => s.id === selectedSubjectId);
+  if (!subj) return;
+  const total = subj.courses.length * 3 || 1;
+  const done = subj.courses.reduce((sum, c) => sum + (c.comp?1:0) + (c.rev?1:0) + (c.ass?1:0), 0);
+  const perc = Math.round(done / total * 100);
+  document.getElementById('subjectProgressBar').style.width = perc + '%';
+  document.getElementById('subjectProgressText').textContent = perc + '%';
+}
+
+function renderGlobalProgress() {
+  const html = subjects.map(s => {
+    const total = s.courses.length * 3 || 1;
+    const done = s.courses.reduce((sum, c) => sum + (c.comp?1:0) + (c.rev?1:0) + (c.ass?1:0), 0);
+    const perc = Math.round(done / total * 100);
+    return `<div class="bg-gray-900 p-6 rounded-2xl"><div class="flex justify-between"><span>${s.name}</span><span>${perc}%</span></div><div class="h-2 bg-gray-700 rounded-full mt-2"><div class="bg-green-500 h-2 rounded-full" style="width:${perc}%"></div></div></div>`;
+  }).join('');
+  document.getElementById('globalProgress').innerHTML = html;
+}
+
+function renderCalendar() {
+  document.getElementById('monthTitle').textContent = new Date(currentYear, currentMonth).toLocaleString('fr-FR', {month:'long', year:'numeric'});
+  const cal = document.getElementById('calendar');
+  cal.innerHTML = weekDays.map(d => `<div class="text-xs text-gray-400 py-2">${d.slice(0,3)}</div>`).join('');
+  const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  for (let i = 0; i < firstDay; i++) cal.innerHTML += `<div></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateObj = new Date(currentYear, currentMonth, d);
+    const dayName = weekDays[dateObj.getDay()];
+    const dateStr = `${currentYear}-${String(currentMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const scheduled = subjects.filter(s => (s.schedule || []).includes(dayName));
+    let squares = scheduled.map(s => 
+      `<div class="flex-1 text-[10px] text-white rounded py-0.5 text-center font-medium" style="background:${s.color}">${s.name.slice(0,2)}</div>`
+    ).join('');
+    let courseCount = 0;
+    subjects.forEach(s => courseCount += s.courses.filter(c => c.date === dateStr).length);
+    const courseBadge = courseCount > 0 ? `<div class="text-[9px] text-amber-300 mt-1">📝 ${courseCount}</div>` : '';
+    const isSelected = (d === selectedDay && currentMonth === new Date().getMonth() && currentYear === new Date().getFullYear()) ? 'ring-2 ring-blue-400 bg-blue-950' : 'bg-gray-900';
+    cal.innerHTML += `
+      <div onclick="showDay(${d})" class="h-28 border border-gray-700 hover:border-blue-500 rounded-2xl p-2 flex flex-col justify-between cursor-pointer ${isSelected}">
+        <div class="text-right text-2xl font-light">${d}</div>
+        <div class="flex gap-1 mt-auto h-6">${squares}</div>
+        ${courseBadge}
+      </div>`;
+  }
+}
+
+function showDay(day) {
+  selectedDay = day;
+  renderCalendar();
+  const dateStr = `${currentYear}-${String(currentMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  const weekday = weekDays[new Date(currentYear, currentMonth, day).getDay()];
+  let html = `<h3 class="font-bold text-blue-400 mb-1">Jour ${day} — ${weekday}</h3>
+              <p class="text-sm text-gray-400 mb-6">${dateStr}</p>`;
+  const scheduled = subjects.filter(s => (s.schedule || []).includes(weekday));
+  if (scheduled.length) {
+    html += `<p class="text-green-400 mb-2 text-xs">MATIÈRES PRÉVUES :</p><div class="flex flex-wrap gap-2 mb-6">`;
+    scheduled.forEach(s => html += `<span class="bg-green-900 px-4 py-1 rounded-full text-sm">${s.name}</span>`);
+    html += `</div>`;
+  }
+  let coursesHtml = '<p class="text-amber-300 mb-3 text-xs">COURS DU JOUR + ÉVOLUTION :</p>';
+  let hasCourses = false;
+  subjects.forEach(s => {
+    s.courses.filter(c => c.date === dateStr).forEach(c => {
+      hasCourses = true;
+      const comp = c.comp ? '✅' : '○';
+      const rev  = c.rev  ? '✅' : '○';
+      const ass  = c.ass  ? '✅' : '○';
+      const perc = Math.round(((c.comp?1:0)+(c.rev?1:0)+(c.ass?1:0))/3 * 100);
+      coursesHtml += `
+        <div class="bg-gray-800 p-4 rounded-xl mb-3">
+          <div class="flex justify-between mb-2">
+            <span class="font-medium">${s.name} — ${c.name}</span>
+            <span class="font-mono text-xs bg-gray-700 px-3 py-1 rounded">${perc}%</span>
+          </div>
+          <div class="flex justify-between text-xs">
+            <div>Compréhension ${comp}</div>
+            <div>Révision ${rev}</div>
+            <div>Assimilation ${ass}</div>
+          </div>
+        </div>`;
+    });
+  });
+  if (!hasCourses) coursesHtml += '<p class="text-gray-400 text-sm">Aucun cours ajouté ce jour.</p>';
+  document.getElementById('dayDetails').innerHTML = html + coursesHtml;
+  document.getElementById('dayDetails').classList.remove('hidden');
+}
+
+function quickAdd(id) {
+  selectedSubjectId = id;
+  renderSubjects();
+  switchTab(1);
+}
+
+function switchTab(n) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', i===n));
+  document.querySelectorAll('#content0,#content1,#content2').forEach((c,i) => c.classList.toggle('hidden', i!==n));
+  if (n === 1 && selectedSubjectId) renderSelectedSubject();
+  if (n === 2) renderGlobalProgress();
+}
+
+// INIT
+loadData();
+renderSubjects();
+renderCalendar();
+switchTab(0);
+</script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Collège Planner</title>
+  <!-- === PWA + iPhone === -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Collège Planner">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#111827">
+  <!-- ==================== -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-950 text-white">
+  <!-- Le reste de ton code est EXACTEMENT le même que la dernière version que je t’ai donnée -->
+  <!-- (tout le <div class="flex h-screen"> ... jusqu'à la fin du </script> ) -->
+  <!-- Je ne le recopie pas ici pour gagner de la place, mais tu gardes ton dernier index.html et tu ajoutes seulement les 5 lignes ci-dessus dans <head> -->
+</body>
+</html>
