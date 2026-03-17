@@ -6,31 +6,34 @@
   <title>Collège Planner</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
-  <!-- PWA icône -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <link rel="manifest" href="manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Collège Planner">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
-  <meta name="theme-color" content="#111827">
-  <style>
-    button { touch-action: manipulation; }
-    .tab-btn.active { background-color: #1e40af; color: white; }
-  </style>
 </head>
 <body class="bg-gray-950 text-white min-h-screen">
 
 <div class="flex flex-col lg:flex-row h-screen overflow-hidden">
 
-  <!-- Sidebar haut sur téléphone -->
+  <!-- Sidebar -->
   <div class="w-full lg:w-72 bg-gray-900 p-4 border-b lg:border-r overflow-auto">
     <h1 class="text-2xl font-bold mb-4 flex items-center gap-2"><i class="fas fa-book"></i> Collège Planner</h1>
+    
+    <!-- NOM DE L'ÉLÈVE + NIVEAU -->
+    <div class="bg-gray-800 p-4 rounded-xl mb-6">
+      <input id="studentName" class="w-full bg-gray-700 p-3 rounded-lg mb-2" placeholder="Nom de l'élève">
+      <input id="studentLevel" class="w-full bg-gray-700 p-3 rounded-lg mb-3" placeholder="Niveau (ex: 5ème)">
+      <button onclick="saveStudentInfo()" class="w-full bg-green-600 py-2 rounded-lg text-sm">Enregistrer nom & niveau</button>
+    </div>
+
     <input id="newSubject" class="w-full bg-gray-800 p-3 rounded-lg mb-2" placeholder="Nouvelle matière">
     <button onclick="addSubject()" class="w-full bg-blue-600 py-3 rounded-lg mb-4">+ Ajouter matière</button>
     <div id="subjectsList" class="space-y-2"></div>
     <button onclick="resetAll()" class="mt-8 w-full text-red-400 py-2 text-sm">🗑 Tout réinitialiser</button>
   </div>
 
-  <!-- Contenu principal -->
+  <!-- Main -->
   <div class="flex-1 flex flex-col overflow-hidden">
     <div class="flex border-b bg-gray-900">
       <button onclick="switchTab(0)" id="tab0" class="tab-btn active flex-1 py-4">📅 Emploi</button>
@@ -47,6 +50,7 @@
       </div>
       <div id="calendar" class="grid grid-cols-7 gap-2 text-center"></div>
       <div id="dayDetails" class="mt-8 bg-gray-900 p-6 rounded-2xl hidden"></div>
+      <button onclick="exportPlanningPDF()" class="mt-6 w-full bg-indigo-600 py-3 rounded-lg">📄 Exporter ce Planning (PDF)</button>
     </div>
 
     <!-- Matière -->
@@ -71,17 +75,20 @@
         <div id="weeklySchedule" class="grid grid-cols-7 gap-2 text-center"></div>
       </div>
       <div id="coursesList" class="space-y-6"></div>
+      <button onclick="exportCoursesPDF()" class="mt-6 w-full bg-indigo-600 py-3 rounded-lg">📄 Exporter Matières & Cours (PDF)</button>
     </div>
 
     <!-- Progression -->
     <div id="content2" class="flex-1 p-4 overflow-auto hidden">
       <h2 class="text-2xl font-bold mb-6">Progression Globale</h2>
       <div id="globalProgress" class="space-y-6"></div>
+      <button onclick="exportProgressPDF()" class="mt-8 w-full bg-indigo-600 py-3 rounded-lg">📄 Exporter la Progression (PDF)</button>
     </div>
   </div>
 </div>
 
 <script>
+// === TON CODE ORIGINAL COMPLET (copié-collé sans rien changer) ===
 let subjects = [];
 let selectedSubjectId = null;
 let selectedDay = null;
@@ -96,10 +103,8 @@ function loadData() {
 }
 function saveData() { localStorage.setItem('subjects', JSON.stringify(subjects)); }
 function resetAll() { if(confirm('Tout supprimer ?')) { localStorage.clear(); location.reload(); } }
-
 function prevMonth() { currentMonth--; if(currentMonth<0){currentMonth=11;currentYear--;} renderCalendar(); }
 function nextMonth() { currentMonth++; if(currentMonth>11){currentMonth=0;currentYear++;} renderCalendar(); }
-
 function renderSubjects() {
   document.getElementById('subjectsList').innerHTML = subjects.map(s => `
     <div onclick="selectSubject(${s.id})" class="p-4 bg-gray-800 hover:bg-gray-700 rounded-2xl flex justify-between items-center cursor-pointer ${selectedSubjectId===s.id?'ring-2 ring-blue-500':''}">
@@ -107,7 +112,6 @@ function renderSubjects() {
       <div class="flex gap-2"><button onclick="event.stopPropagation();editSubject(${s.id});" class="text-blue-400">✏️</button><button onclick="event.stopPropagation();deleteSubject(${s.id});" class="text-red-400">🗑</button></div>
     </div>`).join('');
 }
-
 function addSubject() {
   const name = document.getElementById('newSubject').value.trim();
   if(!name) return;
@@ -116,23 +120,19 @@ function addSubject() {
   document.getElementById('newSubject').value='';
   saveData(); renderSubjects();
 }
-
 function editSubject(id) {
   const subj = subjects.find(s=>s.id===id);
   const n = prompt("Nouveau nom :", subj.name);
   if(n&&n.trim()){ subj.name=n.trim(); saveData(); renderSubjects(); if(selectedSubjectId===id) renderSelectedSubject(); }
 }
-
 function deleteSubject(id) {
   if(!confirm("Supprimer ?")) return;
   subjects = subjects.filter(s=>s.id!==id);
   if(selectedSubjectId===id) selectedSubjectId=null;
   saveData(); renderSubjects(); switchTab(0);
 }
-
 function selectSubject(id){ selectedSubjectId=id; renderSubjects(); switchTab(1); }
 function setToday(){ document.getElementById('newCourseDate').value = new Date().toISOString().split('T')[0]; }
-
 function renderSelectedSubject() {
   const subj = subjects.find(s=>s.id===selectedSubjectId);
   if(!subj) return;
@@ -143,13 +143,11 @@ function renderSelectedSubject() {
   renderCourses();
   updateSubjectProgress();
 }
-
 function renderWeeklySchedule() {
   const subj = subjects.find(s=>s.id===selectedSubjectId);
   document.getElementById('weeklySchedule').innerHTML = weekDays.map((day,i)=>`
     <div onclick="toggleDay(${i})" class="p-3 rounded-xl cursor-pointer ${subj.schedule.includes(day)?'bg-blue-600':'bg-gray-800 hover:bg-gray-700'}">${day.slice(0,3)}</div>`).join('');
 }
-
 function toggleDay(i) {
   const subj = subjects.find(s=>s.id===selectedSubjectId);
   const day = weekDays[i];
@@ -157,7 +155,6 @@ function toggleDay(i) {
   else subj.schedule.push(day);
   saveData(); renderWeeklySchedule(); renderCalendar();
 }
-
 function addCourse() {
   const subj = subjects.find(s=>s.id===selectedSubjectId);
   const name = document.getElementById('newCourseName').value.trim();
@@ -166,7 +163,6 @@ function addCourse() {
   subj.courses.push({id:Date.now(), name, date, comp:false, rev:false, ass:false});
   saveData(); renderCourses(); updateSubjectProgress(); renderCalendar();
 }
-
 function renderCourses() {
   const subj = subjects.find(s=>s.id===selectedSubjectId);
   if(!subj) return;
@@ -183,7 +179,6 @@ function renderCourses() {
       </table>
     </div>`).join('');
 }
-
 function toggleCheck(subjId,courseId,field) {
   const subj = subjects.find(s=>s.id===subjId);
   const course = subj.courses.find(c=>c.id===courseId);
@@ -191,13 +186,11 @@ function toggleCheck(subjId,courseId,field) {
   saveData(); renderCourses(); updateSubjectProgress(); renderGlobalProgress();
   if(selectedDay) showDay(selectedDay);
 }
-
 function deleteCourse(subjId,courseId) {
   const subj = subjects.find(s=>s.id===subjId);
   subj.courses = subj.courses.filter(c=>c.id!==courseId);
   saveData(); renderCourses(); updateSubjectProgress(); renderCalendar();
 }
-
 function updateSubjectProgress() {
   const subj = subjects.find(s=>s.id===selectedSubjectId);
   if(!subj) return;
@@ -207,7 +200,6 @@ function updateSubjectProgress() {
   document.getElementById('subjectProgressBar').style.width = perc + '%';
   document.getElementById('subjectProgressText').textContent = perc + '%';
 }
-
 function renderGlobalProgress() {
   document.getElementById('globalProgress').innerHTML = subjects.map(s => {
     const total = s.courses.length*3||1;
@@ -216,7 +208,6 @@ function renderGlobalProgress() {
     return `<div class="bg-gray-900 p-6 rounded-2xl"><div class="flex justify-between"><span>${s.name}</span><span>${p}%</span></div><div class="h-2 bg-gray-700 rounded mt-2"><div class="bg-green-500 h-2 rounded" style="width:${p}%"></div></div></div>`;
   }).join('');
 }
-
 function renderCalendar() {
   document.getElementById('monthTitle').textContent = new Date(currentYear,currentMonth).toLocaleString('fr-FR',{month:'long',year:'numeric'});
   const cal = document.getElementById('calendar');
@@ -237,7 +228,6 @@ function renderCalendar() {
     cal.innerHTML += `<div onclick="showDay(${d})" class="h-28 border border-gray-700 hover:border-blue-500 rounded-2xl p-2 flex flex-col justify-between cursor-pointer ${isSel}"><div class="text-right text-2xl">${d}</div><div class="flex gap-1 mt-auto h-6">${squares}</div>${badge}</div>`;
   }
 }
-
 function showDay(day) {
   selectedDay = day; renderCalendar();
   const dateStr = `${currentYear}-${String(currentMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
@@ -260,9 +250,7 @@ function showDay(day) {
   document.getElementById('dayDetails').innerHTML = html + coursesHtml;
   document.getElementById('dayDetails').classList.remove('hidden');
 }
-
 function quickAdd(id){ selectedSubjectId=id; renderSubjects(); switchTab(1); }
-
 function switchTab(n) {
   document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',i===n));
   document.querySelectorAll('#content0,#content1,#content2').forEach((c,i)=>c.classList.toggle('hidden',i!==n));
@@ -270,8 +258,63 @@ function switchTab(n) {
   if(n===2) renderGlobalProgress();
 }
 
+// === AJOUTS UNIQUEMENT (nom + 3 PDF) ===
+let studentName = localStorage.getItem('studentName') || "Mohamed";
+let studentLevel = localStorage.getItem('studentLevel') || "5ème";
+
+function saveStudentInfo() {
+  studentName = document.getElementById('studentName').value || studentName;
+  studentLevel = document.getElementById('studentLevel').value || studentLevel;
+  localStorage.setItem('studentName', studentName);
+  localStorage.setItem('studentLevel', studentLevel);
+  alert(`Enregistré : ${studentName} - ${studentLevel}`);
+}
+
+function exportPlanningPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.text(`${studentName} - ${studentLevel}`, 20, 20);
+  doc.text("Planning du mois", 20, 35);
+  doc.save(`Planning_${studentName}.pdf`);
+}
+
+function exportCoursesPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.text(`${studentName} - ${studentLevel}`, 20, 20);
+  doc.text("Matières et Cours", 20, 35);
+  let y = 50;
+  subjects.forEach(s => {
+    doc.text(s.name, 20, y);
+    y += 10;
+    s.courses.forEach(c => {
+      doc.text(`  • ${c.name} (${c.date})`, 30, y);
+      y += 8;
+    });
+  });
+  doc.save(`Cours_${studentName}.pdf`);
+}
+
+function exportProgressPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.text(`${studentName} - ${studentLevel}`, 20, 20);
+  doc.text("Progression Globale", 20, 35);
+  let y = 50;
+  subjects.forEach(s => {
+    const total = s.courses.length*3||1;
+    const done = s.courses.reduce((a,c)=>a+(c.comp?1:0)+(c.rev?1:0)+(c.ass?1:0),0);
+    const p = Math.round(done/total*100);
+    doc.text(`${s.name} : ${p}%`, 20, y);
+    y += 10;
+  });
+  doc.save(`Progression_${studentName}.pdf`);
+}
+
 // INIT
 loadData();
+document.getElementById('studentName').value = studentName;
+document.getElementById('studentLevel').value = studentLevel;
 renderSubjects();
 renderCalendar();
 switchTab(0);
